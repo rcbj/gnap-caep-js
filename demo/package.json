@@ -1,0 +1,17 @@
+{
+  "name": "gnap-caep-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "jose": "^6.2.12",
+    "gnap-caep-client": "0.1.0"
+  },
+  "license": "MIT",
+  "author": "Iya CyberSecurity Solutions, LLC"
+}

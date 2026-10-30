@@ -1,0 +1,24 @@
+{
+  "name": "gnap-caep-client-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/gnap-caep-client",
+    "demo"
+  ],
+  "scripts": {
+    "test": "node --test packages/gnap-caep-client/test/*.test.js scripts/*.test.mjs",
+    "start": "node demo/server.js",
+    "configure-iya-sts": "node scripts/configure-iya-sts.mjs",
+    "version:print": "node scripts/version.mjs",
+    "version:check": "node scripts/version.mjs --check-manifests",
+    "version:sync": "node scripts/version.mjs --sync-manifests",
+    "build:types": "npm run build:types -w packages/gnap-caep-client",
+    "test:types": "npm run build:types -w packages/gnap-caep-client && npm run test:types -w packages/gnap-caep-client"
+  },
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "license": "MIT",
+  "author": "Iya CyberSecurity Solutions, LLC"
+}

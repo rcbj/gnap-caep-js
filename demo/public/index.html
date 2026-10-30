@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>GNAP CAEP Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="importmap">{"imports":{"jose":"/vendor/jose/index.js","gnap-caep-client":"/lib/index.js"}}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◆</span>
+      <span>GNAP CAEP Demo</span>
+      <span class="tag">gnap-caep-client · in-browser client instance</span>
+    </div>
+    <div class="who" id="who"></div>
+  </header>
+
+  <div class="banner-area" id="banners" aria-live="polite"></div>
+
+  <div class="page-tabs" role="tablist" aria-label="Sections">
+    <button class="page-tab" id="tab-identity" type="button" role="tab" data-page="identity" aria-selected="true" aria-controls="panel-identity">Identity</button>
+    <button class="page-tab" id="tab-caep" type="button" role="tab" data-page="caep" aria-selected="false" aria-controls="panel-caep" tabindex="-1">CAEP events</button>
+  </div>
+
+  <div id="panel-identity" class="tab-panel" role="tabpanel" aria-labelledby="tab-identity">
+    <details class="card pane" id="signed-out" open>
+      <summary class="card-head">
+        <span class="pane-title"><h1 id="hero-title">Sign in</h1></span>
+      </summary>
+      <div class="pane-body">
+        <p class="eyebrow">GNAP (RFC 9635)</p>
+        <p class="muted" id="hero-text"></p>
+        <div class="actions" id="hero-actions"></div>
+      </div>
+    </details>
+
+    <details class="card pane" id="key-card">
+      <summary class="card-head">
+        <span class="pane-title"><h2>This browser's client key</h2></span>
+        <span class="pill" id="key-pill">…</span>
+      </summary>
+      <div class="pane-body">
+        <p class="muted small">In GNAP the key is the client. This one was generated in this browser and cannot be read out of it.
+          Nobody registers it: each grant request names the registered application in <code>class_id</code>, and the
+          authorization server accepts this key as an instance of that application. You still approve every grant on its page.</p>
+        <dl class="kv" id="key-info"></dl>
+        <div class="actions">
+          <button class="btn ghost" id="btn-copy-key" type="button">Copy public key</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="card pane" id="security-card">
+      <summary class="card-head">
+        <span class="pane-title"><h2>Protections in effect</h2></span>
+      </summary>
+      <div class="pane-body">
+        <p class="muted" id="security-empty">The authorization server has not been reached yet.</p>
+        <ul class="checks" id="security-list"></ul>
+      </div>
+    </details>
+
+    <details class="card pane" id="session-card">
+      <summary class="card-head">
+        <span class="pane-title"><h2 id="session-title">Session</h2></span>
+        <span class="pill" id="session-pill">Signed out</span>
+      </summary>
+      <div class="pane-body">
+        <p class="muted" id="session-empty">No one is signed in on this tab.</p>
+        <dl class="claims" id="claims" hidden></dl>
+      </div>
+    </details>
+
+    <details class="card pane" id="token-card">
+      <summary class="card-head">
+        <span class="pane-title"><h2>Token cache</h2></span>
+        <span class="muted small" id="rotate-count"></span>
+      </summary>
+      <div class="pane-body">
+        <div class="meter" aria-hidden="true"><div class="meter-fill" id="meter-fill"></div><div class="meter-skew" id="meter-skew"></div></div>
+        <div class="token-row">
+          <div><div class="stat" id="expires-in">—</div><div class="muted small">access token expires in</div></div>
+          <div><div class="stat" id="rotate-in">—</div><div class="muted small">auto-rotation in</div></div>
+          <div><div class="stat" id="last-rotate">—</div><div class="muted small">last rotation</div></div>
+        </div>
+        <div class="actions">
+          <button class="btn ghost" id="btn-rotate" disabled>Rotate now</button>
+          <button class="btn ghost" id="btn-revoke-token" disabled>Revoke this token</button>
+        </div>
+        <pre class="output" id="token-out" hidden></pre>
+      </div>
+    </details>
+
+    <details class="card pane" id="tokens-card">
+      <summary class="card-head">
+        <span class="pane-title"><h2>Grant</h2></span>
+      </summary>
+      <div class="pane-body">
+        <p class="muted small" id="tokens-note">Nothing until someone is signed in on this tab.</p>
+        <div id="tokens-body"></div>
+      </div>
+    </details>
+  </div>
+
+  <div id="panel-caep" class="tab-panel" role="tabpanel" aria-labelledby="tab-caep" hidden>
+    <section class="card" id="stream-card">
+      <div class="card-head">
+        <h2 id="stream-title">CAEP stream</h2>
+        <span class="pill" id="ssf-pill">…</span>
+      </div>
+      <dl class="kv" id="ssf-info"></dl>
+      <div class="chips" id="ssf-events"></div>
+      <fieldset class="event-picker">
+        <legend>Event types this stream asks for</legend>
+        <div class="event-options" id="event-options"></div>
+        <div class="actions">
+          <button class="btn" id="btn-events" type="button" disabled>Update subscription</button>
+          <span class="muted small" id="events-note"></span>
+        </div>
+      </fieldset>
+      <p class="form-error" id="ssf-error" hidden></p>
+      <div class="actions">
+        <button class="btn ghost" id="btn-verify">Request verification event</button>
+        <button class="btn ghost" id="btn-reconnect">Reconnect stream</button>
+      </div>
+    </section>
+
+    <section class="card log-card">
+      <div class="card-head">
+        <h2>Event log</h2>
+        <div class="log-tools">
+          <span class="live" id="live"><span class="dot"></span>polling</span>
+          <button class="btn ghost" id="btn-clear-log" type="button">Clear</button>
+        </div>
+      </div>
+      <ol class="log" id="log"></ol>
+      <p class="muted empty" id="log-empty">No CAEP events yet. Sign in, then trigger an event at the authorization server (for example, revoke the grant on your portal).</p>
+    </section>
+  </div>
+
+  <template id="log-item">
+    <li class="log-item">
+      <div class="log-top">
+        <span class="evt"></span>
+        <time class="muted small"></time>
+      </div>
+      <p class="action"></p>
+      <details>
+        <summary class="muted small">Subject &amp; payload</summary>
+        <pre></pre>
+      </details>
+    </li>
+  </template>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

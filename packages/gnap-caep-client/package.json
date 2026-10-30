@@ -1,0 +1,65 @@
+{
+  "name": "gnap-caep-client",
+  "version": "0.1.0",
+  "description": "In-browser GNAP (RFC 9635) client instance: HTTP-message-signature key proofs, redirect interaction, subject information for user sign-in, key-bound token caching and rotation, and a Shared Signals (SSF) / CAEP event receiver",
+  "homepage": "https://rcbj.github.io/gnap-caep-js/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rcbj/gnap-caep-js.git",
+    "directory": "packages/gnap-caep-client"
+  },
+  "bugs": {
+    "url": "https://github.com/rcbj/gnap-caep-js/issues"
+  },
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "src",
+    "types",
+    "docs",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build:types": "tsc -p tsconfig.json",
+    "test:types": "node test/types/extract-doc-examples.mjs && tsc -p test/types/tsconfig.json",
+    "prepack": "npm run build:types"
+  },
+  "keywords": [
+    "browser",
+    "caep",
+    "gnap",
+    "httpsig",
+    "http-message-signatures",
+    "rfc9421",
+    "rfc9635",
+    "risc",
+    "secevent",
+    "shared-signals",
+    "ssf"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "dependencies": {
+    "jose": "^6.2.12"
+  },
+  "author": "Iya CyberSecurity Solutions, LLC",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

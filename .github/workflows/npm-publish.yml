@@ -1,0 +1,193 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# Builds, tests and publishes packages/gnap-caep-client to npmjs.com.
+#
+# THE VERSION (scripts/version.mjs): M.N from the VERSION file, and a patch
+# number worked out from what is already on npm, so nobody edits a number per
+# build and no version commit is needed:
+#   - main publishes a release, M.N.P: one more than the highest M.N release
+#     published (0.1.0, 0.1.1, ...);
+#   - develop publishes a pre-release of the release that comes next,
+#     M.N.P-next.R (0.1.1-next.0, 0.1.1-next.1, ...). npm never resolves a
+#     range like ^0.1.0 to a pre-release.
+# The committed package.json says M.N.0; `--set` writes the real version into
+# the workspace copy just before packing.
+#
+# WHEN IT PUBLISHES, as iya-sts's build-container.yml does for images:
+#   - a push to main publishes a release under the npm dist-tag `latest`;
+#   - a push to develop publishes a pre-release under `next`, so `npm install`
+#     never picks it up by accident;
+#   - a pull request builds, tests and packs, and publishes nothing;
+#   - Run workflow (workflow_dispatch) publishes on the channel chosen: latest
+#     (a release) or next (a pre-release).
+# Only a change to the package, VERSION, the versioner, the lock file or this
+# workflow publishes. A demo-only change doesn't release the library.
+#
+# AUTHENTICATION. The publish job can use either of two credentials:
+#   - npm trusted publishing (OIDC): no secret. Configure it on npmjs.com under
+#     the package's Settings → Trusted publishing, naming this repository and
+#     the workflow file `npm-publish.yml`, with the environment `npm`.
+#   - The repository secret NPM_TOKEN: an npm granular access token with
+#     publish rights. The very first publish needs this, because a trusted
+#     publisher can only be configured for a package that already exists. Once
+#     trusted publishing is set up, delete the secret.
+# Either way the package is published with provenance (`--provenance`): npm
+# shows which commit and workflow run built it.
+#
+# After a publish, the commit is tagged `v<version>`, so the npm version leads
+# back to the source.
+name: Publish the npm package
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - packages/gnap-caep-client/**
+      - VERSION
+      - package-lock.json
+      - scripts/version.mjs
+      - .github/workflows/npm-publish.yml
+  pull_request:
+    paths:
+      - packages/gnap-caep-client/**
+      - VERSION
+      - package-lock.json
+      - scripts/version.mjs
+      - .github/workflows/npm-publish.yml
+  workflow_dispatch:
+    inputs:
+      dist-tag:
+        description: npm dist-tag to publish under
+        type: choice
+        options: [latest, next]
+        default: latest
+
+permissions:
+  contents: read
+
+# One publish per branch at a time, and a queued one is not cancelled: each
+# carries its own build number, and dropping one would leave a gap for no reason.
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.stamp.outputs.version }}
+      channel: ${{ steps.channel.outputs.channel }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          # The 21 October 2026 security release, fixing HTTP2Shell / Node2Shell (CVE-2026-111497); iya-sts's pin too.
+          node-version: '24.22.1'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      # VERSION and the committed manifests must agree before anything is built.
+      - name: Check the manifests follow VERSION
+        run: node scripts/version.mjs --check-manifests
+
+      # main releases M.N.P; develop (and a pull request's dry run) a pre-release, M.N.P-next.R.
+      # The numbers come from the versions already on npm (scripts/version.mjs).
+      - name: Choose the channel
+        id: channel
+        run: |
+          case "${GITHUB_EVENT_NAME}:${GITHUB_REF_NAME}" in
+            workflow_dispatch:*) CHANNEL="${{ inputs.dist-tag }}" ;;
+            push:main)           CHANNEL=latest ;;
+            *)                   CHANNEL=next ;;
+          esac
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp the version
+        id: stamp
+        run: |
+          VERSION="$(node scripts/version.mjs --set packages/gnap-caep-client --channel '${{ steps.channel.outputs.channel }}')"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "### gnap-caep-client ${VERSION} (${{ steps.channel.outputs.channel }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Pack
+        id: pack
+        working-directory: packages/gnap-caep-client
+        run: |
+          TARBALL="$(npm pack --silent)"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+          tar -tzf "${TARBALL}" | sed 's/^/  /'
+          # prepack built the TypeScript declarations; they must be in the package.
+          tar -tzf "${TARBALL}" | grep -q '^package/types/index.d.ts$' || { echo "types/index.d.ts is not in the package" >&2; exit 1; }
+          # The library must import from what was packed, not from the checkout.
+          mkdir -p /tmp/smoke && cd /tmp/smoke && npm init -y >/dev/null && npm pkg set type=module
+          npm install --no-audit --no-fund "${GITHUB_WORKSPACE}/packages/gnap-caep-client/${TARBALL}"
+          node --input-type=module -e "import * as m from 'gnap-caep-client'; for (const n of ['GNAPClient','SSFReceiver','AccountManager','logEventReceived']) if (!m[n]) throw new Error(n + ' is not exported'); console.log('exports ok');"
+          # And from TypeScript, through the package's "types".
+          printf '%s\n' "import { SSFReceiver, type SecurityEvent } from 'gnap-caep-client';" \
+            "new SSFReceiver({ transmitterIssuer: 'https://idp.example.com' }).onSessionRevoked((evt: SecurityEvent) => evt.jti);" > check.ts
+          printf '%s' '{"compilerOptions":{"noEmit":true,"strict":true,"module":"NodeNext","moduleResolution":"NodeNext","target":"ES2022","lib":["ES2022","DOM"]},"files":["check.ts"]}' > tsconfig.json
+          "${GITHUB_WORKSPACE}/node_modules/.bin/tsc" -p tsconfig.json && echo "types ok"
+
+      - name: Upload the tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-package
+          path: packages/gnap-caep-client/${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # `npm` is the environment a trusted publisher names; add required reviewers
+    # to it in Settings → Environments to hold every publish for approval.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/gnap-caep-client/v/${{ needs.build.outputs.version }}
+    permissions:
+      contents: write    # the v<version> tag
+      id-token: write    # trusted publishing and provenance
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.1'
+          registry-url: https://registry.npmjs.org
+
+      - name: Download the tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: npm-package
+
+      # The channel the build stamped the version for: a release goes out as latest, a pre-release as next.
+      - name: Choose the dist-tag
+        id: tag
+        run: echo "dist_tag=${{ needs.build.outputs.channel }}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        env:
+          # Empty when trusted publishing is configured instead.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish "${{ needs.build.outputs.tarball }}" \
+            --access public --provenance --tag "${{ steps.tag.outputs.dist_tag }}"
+          echo "Published gnap-caep-client@${{ needs.build.outputs.version }} as ${{ steps.tag.outputs.dist_tag }}." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tag the commit
+        run: |
+          git tag "v${{ needs.build.outputs.version }}" "${GITHUB_SHA}"
+          git push origin "v${{ needs.build.outputs.version }}"

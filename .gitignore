@@ -1,0 +1,4 @@
+node_modules/
+packages/gnap-caep-client/types/
+packages/gnap-caep-client/test/types/doc-examples/
+_site_api/

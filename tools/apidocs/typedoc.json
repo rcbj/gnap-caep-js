@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "gnap-caep-client",
+  "entryPoints": ["../../packages/gnap-caep-client/src/index.js"],
+  "tsconfig": "tsconfig.json",
+  "out": "../../_site_api/api",
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "sort": ["kind", "alphabetical"],
+  "githubPages": false,
+  "navigationLinks": {
+    "Documentation": "https://rcbj.github.io/gnap-caep-js/",
+    "JSDoc reference": "https://rcbj.github.io/gnap-caep-js/jsdoc/",
+    "GitHub": "https://github.com/rcbj/gnap-caep-js"
+  }
+}

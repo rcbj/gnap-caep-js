@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: MIT
+#
+# Jekyll configuration for the gnap-caep-client documentation site, laid out like oidc-caep-client's
+# and iya-sts's: the `minima` theme GitHub Pages ships, with a sidebar drawn from _data/navigation.yml.
+# ../.github/workflows/pages.yml builds it. The guide and the API reference are the package's own files
+# (packages/gnap-caep-client/docs/spa-guide.md and README.md), copied in by the workflow.
+title: gnap-caep-client
+tagline: documentation
+description: >-
+  A GNAP (RFC 9635) client for browser single-page apps: HTTP message signature key proofs,
+  redirect interaction, subject information for sign-in, key-bound token rotation, several
+  accounts per browser, and a Shared Signals receiver with one handler per CAEP event.
+theme: minima
+show_excerpts: false
+baseurl: "/gnap-caep-js"
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+plugins:
+  - jekyll-relative-links
