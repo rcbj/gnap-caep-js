@@ -41,6 +41,7 @@
  * ADMIN_API_CLIENT_SECRET; on the compose stack it lives in OpenBao (iya-sts docs/management-api.md).
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import https from 'node:https';
 import { dirname, resolve } from 'node:path';
@@ -61,7 +62,8 @@ export function usage() {
 
   --config       The demo's GNAP file, with grantEndpoint and access (default: demo/public/gnap.json)
   --public-url   Where the demo is served. The finish URI is <public-url>/callback
-                 (default: $PUBLIC_URL or http://localhost:3000)
+                 (default: $PUBLIC_URL). Without it, the origin is http://localhost:<port>,
+                 <port> being the running demo's PORT, then $PORT, or 3000.
   --identifier   The application's identifier, which the demo sends as class_id
                  (default: the file's "application", else gnap-caep-demo)
   --test-user    The test user to create (default: gnap-demo-user). Its password is
@@ -75,7 +77,9 @@ The management API secret is STS_ADMIN_API_CLIENT_SECRET or ADMIN_API_CLIENT_SEC
 export function parseArgs(argv, env = process.env) {
   const out = {
     config: resolve(repoRoot, 'demo/public/gnap.json'),
-    publicUrl: (env.PUBLIC_URL || 'http://localhost:3000').replace(/\/+$/, ''),
+    publicUrl: String(env.PUBLIC_URL ?? '').replace(/\/+$/, ''),
+    // Set when --public-url or a non-empty PUBLIC_URL was given. The default does not count.
+    publicUrlGiven: Boolean(env.PUBLIC_URL),
     testUser: 'gnap-demo-user',
     identifier: undefined,
     dryRun: false,
@@ -90,15 +94,52 @@ export function parseArgs(argv, env = process.env) {
     };
     if (arg === '--help' || arg === '-h') out.help = true;
     else if (arg === '--config') out.config = resolve(value());
-    else if (arg === '--public-url') out.publicUrl = String(value()).replace(/\/+$/, '');
+    else if (arg === '--public-url') {
+      out.publicUrl = String(value()).replace(/\/+$/, '');
+      out.publicUrlGiven = true;
+    }
     else if (arg === '--identifier') out.identifier = String(value()).trim();
     else if (arg === '--test-user') out.testUser = String(value()).trim();
     else if (arg === '--no-test-user') out.testUser = '';
     else if (arg === '--dry-run') out.dryRun = true;
     else throw new Error(`Unknown argument ${arg}\n${usage()}`);
   }
-  if (!out.publicUrl) throw new Error('--public-url is empty');
+  if (out.publicUrlGiven && !out.publicUrl) throw new Error('--public-url is empty');
   return out;
+}
+
+/** The container's PORT wins. Otherwise the environment. An empty or unusable value is absent. */
+export function demoPort(envPort, containerPortValue) {
+  const raw = String(containerPortValue ?? '').trim() || String(envPort ?? '').trim();
+  if (!raw) return undefined;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return undefined;
+  return port;
+}
+
+/**
+ * The origin the demo is registered under. An explicit public URL is kept.
+ * Otherwise it is http://localhost on the port the demo listens on, or 3000.
+ */
+export function publicUrlFor({ publicUrl, publicUrlGiven, envPort, containerPort: containerPortValue }) {
+  if (publicUrlGiven) return publicUrl;
+  return `http://localhost:${demoPort(envPort, containerPortValue) ?? 3000}`;
+}
+
+/** PORT from the running caep-demo container, when compose has one. Docker being absent is not an error. */
+export function containerPort(cwd = repoRoot) {
+  try {
+    const id = execFileSync('docker', ['compose', 'ps', '-q', 'caep-demo'], {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim().split('\n')[0];
+    if (!id) return undefined;
+    const env = execFileSync('docker', ['inspect', '-f', '{{range .Config.Env}}{{println .}}{{end}}', id], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return env.split('\n').find((line) => line.startsWith('PORT='))?.slice('PORT='.length);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -275,7 +316,13 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const file = readGnapFile(readFileSync(args.config, 'utf8'), args.config);
   const identifier = args.identifier || file.application || 'gnap-caep-demo';
-  const plan = planFor({ file, identifier, publicUrl: args.publicUrl, testUser: args.testUser });
+  const publicUrl = publicUrlFor({
+    publicUrl: args.publicUrl,
+    publicUrlGiven: args.publicUrlGiven,
+    envPort: process.env.PORT,
+    containerPort: args.publicUrlGiven ? undefined : containerPort(),
+  });
+  const plan = planFor({ file, identifier, publicUrl, testUser: args.testUser });
 
   if (args.dryRun) {
     console.log(`# ${file.realmBase}/admin-api (nothing is sent)`);
@@ -296,7 +343,7 @@ export async function main(argv = process.argv.slice(2)) {
   console.log(`application:   ${identifier}`);
   console.log(`grant endpoint ${file.grantEndpoint}`);
   console.log(`finish URI:    ${plan.finishUri}`);
-  console.log(`CORS origin:   ${new URL(args.publicUrl).origin}`);
+  console.log(`CORS origin:   ${new URL(publicUrl).origin}`);
   console.log(`SSF scopes:    ${file.scopes.join(' ') || '(none)'}`);
   console.log(`client keys:   none registered: each browser's key is an instance of ${identifier} (class_id)`);
 }

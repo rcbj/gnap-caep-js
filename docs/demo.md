@@ -27,7 +27,8 @@ The browser talks to iya-sts directly, so iya-sts must allow CORS from the demo'
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PUBLIC_URL` | `http://localhost:3000` | The URL browsers use. The finish URI is `${PUBLIC_URL}/callback`. |
+| `PORT` | `3000` | The listen port and the published port. |
+| `PUBLIC_URL` | empty | Overrides the origin when the browser-facing URL is not `http://localhost:$PORT`. The finish URI is that origin plus `/callback`. |
 
 ## Register the demo on iya-sts
 
@@ -45,7 +46,7 @@ ADMIN_API_CLIENT_SECRET=… npm run configure-iya-sts
 
 | Option | Use |
 |---|---|
-| `--public-url url` | The demo isn't on `http://localhost:3000`. |
+| `--public-url url` | The demo isn't on `http://localhost:$PORT`. |
 | `--config path` | Another GNAP file. |
 | `--identifier id` | Another application identifier (set the same `application` in `gnap.json`, which the page sends as `class_id`). |
 | `--test-user name`, `--no-test-user` | Name the test user, or skip it. |
