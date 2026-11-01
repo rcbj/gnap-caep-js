@@ -3,9 +3,10 @@ services:
     build: .
     image: gnap-caep-demo
     ports:
-      - "${HOST_PORT:-3000}:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     environment:
-      # URL the browser uses to reach the app; the interaction finish URI is ${PUBLIC_URL}/callback.
-      # The GNAP client instance runs in the browser; demo/public/gnap.json names the authorization server.
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      # URL the browser uses. Empty means the server derives http://localhost:$PORT.
+      # The interaction finish URI is that origin plus /callback.
+      PORT: ${PORT:-3000}
+      PUBLIC_URL: ${PUBLIC_URL-}
     stop_grace_period: 5s
