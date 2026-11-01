@@ -143,6 +143,8 @@ await accounts.signOut(key);                           // revokes that account's
 
 ## CAEP: one handler per event
 
+**Turning CAEP and RISC off.** `signals` defaults to on. `"signals": false` drops `ssf.read` and `ssf.manage` from the grant (a string is removed after trimming; an object is removed when its `type` is exactly one of those). Other rights stay, and the subject request is unchanged. Sign-in does not read transmitter metadata. Do not start a receiver, and do not contact a transmitter. If those two rights were the only ones in `access`, set `access` to a right the authorization server grants. The library does not invent a replacement. `SSFReceiver` stays available for a client that leaves `signals` on.
+
 ```js
 import { SSFReceiver } from 'gnap-caep-client';
 
@@ -194,6 +196,7 @@ await caep.start({ catchUp: true });                    // discover, create or r
 | `grantEndpoint` or `metadata` | one is required |
 | `finishUri` | — (required for the redirect interaction) |
 | `access` | — (required per request if not set here) |
+| `signals` | `true` (omitted is on). `false` turns CAEP and RISC off |
 | `subject` | `{ subIdFormats: ['iss_sub', 'opaque'] }`; `false` asks for none |
 | `display` | — |
 | `classId` | — (the registered application's identifier, sent as `class_id`) |
