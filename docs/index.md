@@ -10,7 +10,7 @@ A **GNAP** ([RFC 9635](https://www.rfc-editor.org/rfc/rfc9635)) client library f
 - **Signing in:** a grant the person approves at the authorization server through a redirect interaction, checked with the interaction hash, whose subject information (and a verified `id_token` assertion) says who they are.
 - **Tokens:** key-bound access tokens, cached and rotated before they expire, safely across tabs.
 - **Several accounts:** several people signed in to one browser, with one active account per tab.
-- **CAEP:** the application's Shared Signals stream, with one handler per CAEP event and a hook for your own logic.
+- **CAEP:** the application's Shared Signals stream, with one handler per CAEP event and a hook for your own logic. `signals` defaults to on. `"signals": false` turns CAEP and RISC off: the grant drops `ssf.read` and `ssf.manage`, and the page does not start a receiver or contact a transmitter. If those were the only rights, set `access` to a right the authorization server grants.
 
 It uses Web APIs only and depends on nothing but [`jose`](https://github.com/panva/jose). It is the GNAP counterpart of [oidc-caep-client](https://rcbj.github.io/oidc-caep-client/), built against [iya-sts](https://rcbj.github.io/iya-sts/gnap.html).
 

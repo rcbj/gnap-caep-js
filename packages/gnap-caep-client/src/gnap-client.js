@@ -16,6 +16,14 @@ const HASH_METHODS = { 'sha-256': 'SHA-256', 'sha-512': 'SHA-512' };
 /** Parameters that never arrive at a redirect finish URI: GNAP never sends a token through the browser. */
 const FRONT_CHANNEL_TOKENS = ['access_token', 'id_token', 'token', 'value', 'continue', 'refresh_token'];
 
+/** Rights dropped from a grant when `signals` is false. A string is matched after trim; an object's `type` is exact. */
+const SIGNAL_RIGHTS = new Set(['ssf.read', 'ssf.manage']);
+
+function isSignalRight(right) {
+  if (typeof right === 'string') return SIGNAL_RIGHTS.has(right.trim());
+  return !!right && typeof right === 'object' && typeof right.type === 'string' && SIGNAL_RIGHTS.has(right.type);
+}
+
 /** Grant request members `extra` may not set: the client sets them, and the callback relies on them. */
 const RESERVED_REQUEST_MEMBERS = Object.freeze(['client', 'interact']);
 
@@ -32,6 +40,8 @@ const PROFILE_CLAIMS = ['name', 'given_name', 'family_name', 'preferred_username
  *           (the redirect finish URI, section 2.5.2). Required for a redirect interaction.
  * @property {Array<string|Record<string, any>>} [access]  The access rights to request by default
  *           (section 8): reference strings such as `"ssf.read"`, or objects with `type`, `actions`, ...
+ * @property {boolean} [signals]                CAEP and RISC. Omitted or `true` is on. `false` removes
+ *           `ssf.read` and `ssf.manage` from the grant request. The subject request is unchanged.
  * @property {{ subIdFormats?: string[], assertionFormats?: string[] }|false} [subject]  Who the resource
  *           owner is (section 2.2). Default `{ subIdFormats: ['iss_sub', 'opaque'] }`. `false` asks for nothing.
  * @property {{ name?: string, uri?: string, logo_uri?: string }} [display]  What the approval page shows
@@ -108,6 +118,8 @@ export class GNAPClient extends Emitter {
     if (!HASH_METHODS[this.#config.hashMethod]) {
       throw new TypeError(`hashMethod must be one of ${Object.keys(HASH_METHODS).join(', ')}`);
     }
+    if (this.#config.signals === undefined) this.#config.signals = true;
+    else if (typeof this.#config.signals !== 'boolean') throw new TypeError('signals must be true or false');
     if (this.#config.access !== undefined && !Array.isArray(this.#config.access)) throw new TypeError('access must be an array');
     this.#config.transactionStore ??= new TransactionStore({ prefix: 'gnap-caep-client:grant:' });
     this.#config.instanceStore ??= new MemoryTokenStore();
@@ -217,6 +229,7 @@ export class GNAPClient extends Emitter {
    *
    * @param {object} [opts]
    * @param {Array<string|Record<string, any>>} [opts.access]  Access rights; default the configured ones.
+   *           When `signals` is false, `ssf.read` and `ssf.manage` are removed from this list.
    * @param {string} [opts.label]          A label for the access token.
    * @param {string[]} [opts.flags]        Access token flags to ask for (e.g. `durable`). `bearer` is refused
    *           while `requireBoundTokens` is on.
@@ -231,8 +244,14 @@ export class GNAPClient extends Emitter {
   async createGrantRequest(opts = {}) {
     this.#requireInit();
     const c = this.#config;
-    const access = opts.access ?? c.access;
+    let access = opts.access ?? c.access;
     if (!Array.isArray(access) || !access.length) throw new TypeError('access is required: the rights to ask for (RFC 9635 section 8)');
+    if (c.signals === false) {
+      access = access.filter((right) => !isSignalRight(right));
+      if (!access.length) {
+        throw new TypeError('signals is false and access has no rights left after ssf.read and ssf.manage were removed; the caller must name a right this authorization server grants');
+      }
+    }
     const flags = opts.flags ?? [];
     if (c.requireBoundTokens && flags.includes('bearer')) throw new TypeError('The bearer flag is refused while requireBoundTokens is on');
     const reserved = Object.keys(opts.extra ?? {}).filter((k) => RESERVED_REQUEST_MEMBERS.includes(k));

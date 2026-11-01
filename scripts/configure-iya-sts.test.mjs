@@ -20,6 +20,14 @@ describe('configure-iya-sts', () => {
     assert.deepEqual(realm.scopes, ['ssf.manage']);
     assert.throws(() => readGnapFile(JSON.stringify({ grantEndpoint: 'https://sts.test/oauth2/token' })), /grant endpoint/);
     assert.throws(() => readGnapFile(JSON.stringify({ grantEndpoint: 'https://sts.test/payments/gnap' })), /profile/);
+    const off = readGnapFile(JSON.stringify({
+      grantEndpoint: 'https://sts.test/gnap', signals: false,
+      access: ['openid', 'ssf.read', 'ssf.manage', { type: 'ssf', actions: ['write'] }],
+    }));
+    assert.deepEqual(off.scopes, []);
+    const plan = planFor({ file: off, identifier: 'x', publicUrl: 'http://localhost:3000', testUser: '' });
+    assert.equal(plan.fields.oauthAllowedScope, undefined);
+    assert.equal(plan.calls.some((c) => c.path === '/roles/add-member'), false);
   });
 
   it('plans the application, the SSF roles and the test user', () => {

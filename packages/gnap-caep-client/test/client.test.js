@@ -144,6 +144,62 @@ describe('the grant request (RFC 9635 section 2)', () => {
     assert.ok(grantSet.access_token);
   });
 
+  it('signals: false requests openid and not ssf.read, and leaves the subject request', async () => {
+    const urls = [];
+    const fetch = (url, init) => {
+      urls.push(String(url));
+      return as.fetch(url, init);
+    };
+    const on = await newClient({ access: ['openid', 'ssf.read'], fetch });
+    await on.createGrantRequest();
+    const subject = as.state.lastGrantRequest.subject;
+    const off = await newClient({ signals: false, access: ['openid', 'ssf.read'], fetch });
+    await off.createGrantRequest();
+    const access = as.state.lastGrantRequest.access_token.access;
+    assert.ok(access.includes('openid'));
+    assert.equal(access.includes('ssf.read'), false);
+    assert.deepEqual(access, ['openid']);
+    assert.deepEqual(as.state.lastGrantRequest.subject, subject);
+    assert.equal(urls.some((u) => u.includes('/.well-known/ssf-configuration')), false);
+
+    await off.createGrantRequest({
+      access: ['openid', ' ssf.read ', 'ssf.manage', { type: 'ssf.read' }, { type: 'ssf.manage' }, { type: ' ssf.read' }, { type: 'photo-api', actions: ['read'] }],
+    });
+    assert.deepEqual(as.state.lastGrantRequest.access_token.access, ['openid', { type: ' ssf.read' }, { type: 'photo-api', actions: ['read'] }]);
+    await assert.rejects(off.createGrantRequest({ access: ['ssf.read', 'ssf.manage'] }), /signals is false/);
+  });
+
+  it('omitted signals does not strip ssf.read', async () => {
+    const client = await newClient({ access: ['openid', 'ssf.read'] });
+    assert.equal(client.config.signals, true);
+    await client.createGrantRequest();
+    assert.deepEqual(as.state.lastGrantRequest.access_token.access, ['openid', 'ssf.read']);
+    const explicit = await newClient({ signals: true, access: ['openid', 'ssf.read'] });
+    await explicit.createGrantRequest();
+    assert.deepEqual(as.state.lastGrantRequest.access_token.access, ['openid', 'ssf.read']);
+  });
+
+  it('signals: false with only ssf.read and ssf.manage throws', async () => {
+    const client = await newClient({ signals: false, access: ['ssf.read', 'ssf.manage'] });
+    await assert.rejects(client.createGrantRequest(), (err) => {
+      assert.equal(err instanceof TypeError, true);
+      assert.match(err.message, /signals is false and access has no rights left after ssf\.read and ssf\.manage were removed/);
+      assert.match(err.message, /the caller must name a right this authorization server grants/);
+      return true;
+    });
+    assert.equal(as.state.grantRequests, 0);
+    const objects = await newClient({ signals: false, access: [{ type: 'ssf.read' }, ' ssf.manage '] });
+    await assert.rejects(objects.createGrantRequest(), /no rights left after ssf\.read and ssf\.manage were removed/);
+  });
+
+  it('signals: "no" throws', () => {
+    assert.throws(() => new GNAPClient({ grantEndpoint: as.grantEndpoint, signals: 'no' }), (err) => {
+      assert.equal(err instanceof TypeError, true);
+      assert.equal(err.message, 'signals must be true or false');
+      return true;
+    });
+  });
+
   it('sends the instance_id by reference when asked to, signed with the same key', async () => {
     const client = await newClient({ useInstanceId: true, instanceStore: new MemoryTokenStore() });
     await signIn(client);

@@ -112,6 +112,7 @@ function parseConfig(doc) {
     application: String(doc.application ?? '').trim() || undefined,
     display: doc.display,
     access,
+    signals: doc.signals,
     subIdFormats: doc.subIdFormats ?? ['iss_sub', 'account', 'opaque'],
     assertionFormats: doc.assertionFormats ?? [],
   };
@@ -128,6 +129,7 @@ async function applyConfig(cfg) {
     // preflights. The AS's CORS answer must list OPTIONS in Access-Control-Allow-Methods.
     finishUri: FINISH_URI,
     access: cfg.access,
+    signals: cfg.signals,
     display: { name: 'GNAP CAEP demo', uri: `${ORIGIN}/`, ...cfg.display },
     // The registered application this browser's key is an instance of: the AS accepts an unregistered key
     // when class_id names a registered client (iya-sts: gnap.unregisteredInstances, #1216).
@@ -143,7 +145,7 @@ async function applyConfig(cfg) {
     if (!cfg.idTokenIssuer) throw err;
     console.warn('[demo] id_token verification is off:', err.message);
     return GNAPClient.discover({
-      grantEndpoint: cfg.grantEndpoint, finishUri: FINISH_URI, access: cfg.access,
+      grantEndpoint: cfg.grantEndpoint, finishUri: FINISH_URI, access: cfg.access, signals: cfg.signals,
       display: { name: 'GNAP CAEP demo', uri: `${ORIGIN}/`, ...cfg.display },
       classId: cfg.application, subject: { subIdFormats: cfg.subIdFormats, assertionFormats: [] }, keyStore,
     });
@@ -198,7 +200,9 @@ const reauthenticate = (key) => go((m) => m.reauthenticate(key));
 
 async function activate(key) {
   closeMenu();
-  ui.busy = `Switching to ${labelOf(accounts.get(key))}: checking the signals queued for this application…`;
+  ui.busy = config.signals === false
+    ? `Switching to ${labelOf(accounts.get(key))}…`
+    : `Switching to ${labelOf(accounts.get(key))}: checking the signals queued for this application…`;
   render();
   try {
     await accounts.activate(key);
@@ -255,6 +259,7 @@ const canWrite = (grant) => rightsOf(grant).includes('ssf.manage');
 const canRead = (grant) => canWrite(grant) || rightsOf(grant).includes('ssf.read');
 
 function makeReceiver(getTokenSet, streamId) {
+  if (config.signals === false) return undefined;
   return new SSFReceiver({
     transmitterIssuer: config.transmitterIssuer,
     streamId,
@@ -269,6 +274,12 @@ function makeReceiver(getTokenSet, streamId) {
 
 async function startCaep(account, getTokenSet) {
   const key = account.key;
+  // Off before the missing-rights note, which is only for a grant that was allowed to ask.
+  if (config.signals === false) {
+    caep = { key, receiver: undefined, state: { status: 'unavailable', note: 'CAEP and RISC are off, so this tab reads no stream.' } };
+    render();
+    return;
+  }
   caep = { key, receiver: undefined, state: { status: 'connecting' } };
   render();
   try {
@@ -559,7 +570,9 @@ function renderHero(list) {
     text = 'Loading the GNAP configuration.';
   } else if (cur?.status === 'signed-in') {
     title = `Signed in as ${labelOf(cur)}`;
-    text = 'The grant, its token cache and the CAEP stream for this account are on this tab.';
+    text = config.signals === false
+      ? 'The grant and its token cache for this account are on this tab. CAEP and RISC are off.'
+      : 'The grant, its token cache and the CAEP stream for this account are on this tab.';
   } else if (cur) {
     title = cur.status === 'ended' ? `${labelOf(cur)}'s grant was ended` : `${labelOf(cur)} is signed out`;
     text = `${cur.status === 'ended' && cur.endedReason ? `${cur.endedReason} ` : ''}Sign in again as ${labelOf(cur)}, or with another account.`;
@@ -594,10 +607,11 @@ function renderStream() {
   const saved = selectedEvents();
   const dirty = picked.length !== saved.length || picked.some((n) => !saved.includes(n));
   $('btn-events').disabled = !st.write || !picked.length || !dirty;
-  $('events-note').textContent = !r ? 'Sign in to change the stream\'s event types.'
+  $('events-note').textContent = config?.signals === false ? 'CAEP and RISC are off.'
+    : !r ? 'Sign in to change the stream\'s event types.'
     : !st.write ? 'Changing the stream needs ssf.manage.' : dirty ? 'Not applied yet.' : 'The stream asks for these.';
   $('btn-verify').disabled = !s || !st.write;
-  $('btn-reconnect').disabled = !me;
+  $('btn-reconnect').disabled = !me || config?.signals === false;
   $('ssf-error').hidden = !st.error;
   $('ssf-error').textContent = st.error ?? '';
   $('live').classList.toggle('on', !!r);

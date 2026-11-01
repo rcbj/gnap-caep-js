@@ -27,11 +27,13 @@
  *     tokens it issues. Its CORS check finds the application a token names through this attribute
  *     (or oauthClientId); without it the SSF calls the browser makes with the token are blocked;
  *   - `oauthAllowedScope`: the Shared Signals rights the file's `access` names (ssf.read, ssf.manage):
- *     iya-sts grants those protected rights only to an application that declares them (STS-GNAP-0719);
+ *     iya-sts grants those protected rights only to an application that declares them (STS-GNAP-0719).
+ *     `"signals": false` omits both, so neither is declared and neither role is added;
  *   - `gnapDisplayUri`: the demo's address, shown on the approval page.
  *
  * It also adds the application to the native roles SSF_READ and SSF_MANAGE (application members), for
- * whichever rights the file asks for, and creates a test user (default gnap-demo-user) to approve the
+ * whichever of those rights the file asks for. `"signals": false` skips both. It creates a test user
+ * (default gnap-demo-user) to approve the
  * grant. Its password is GNAP_DEMO_USER_PASSWORD, or one is generated and printed once. An existing user
  * keeps its password. Running it again adds the same values to the existing application.
  *
@@ -162,8 +164,9 @@ export function readGnapFile(text, path = 'gnap.json') {
   }
   const realmBase = `${url.origin}${url.pathname.replace(/\/gnap$/, '')}`;
   const access = Array.isArray(doc.access) ? doc.access : [];
+  const signalsOff = doc.signals === false;
   const scopes = [...new Set(access.flatMap((r) => (typeof r === 'string' ? [r] : r?.type === 'ssf' ? (r.actions ?? []).map((a) => (a === 'write' ? 'ssf.manage' : 'ssf.read')) : []))
-    .filter((s) => /^ssf\./.test(s)))];
+    .filter((s) => /^ssf\./.test(s) && !(signalsOff && (s === 'ssf.read' || s === 'ssf.manage'))))];
   return { grantEndpoint: url.href, realmBase, origin: url.origin, scopes, application: String(doc.application ?? '').trim() || undefined };
 }
 

@@ -140,6 +140,8 @@ Use `AccountManager` instead of `TokenManager`. Each tab has one active account,
 
 ## 8. Receive CAEP events
 
+`signals` defaults to on. `"signals": false` turns CAEP and RISC off: the grant drops `ssf.read` and `ssf.manage`, the subject request stays as it is, and this page does not start a receiver or contact a transmitter. If those were the only rights, set `access` to a right the authorization server grants. Leave `signals` omitted to keep receiving events, and construct the receiver as below.
+
 ```js
 const receiver = new SSFReceiver({
   transmitterIssuer: 'https://as.example.com',
