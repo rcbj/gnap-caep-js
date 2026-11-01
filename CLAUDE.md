@@ -1,0 +1,79 @@
+# gnap-caep-js
+
+A GNAP client (RFC 9635) for a browser application, and a CAEP receiver. The published package name is `gnap-caep-client`. The page holds a non-extractable key and identifies the registered application with a `class_id`. The source is JavaScript with JSDoc, and the only runtime dependency is `jose`.
+
+The server-side library is [gnap-caep-risc-nodejs](https://github.com/rcbj/gnap-caep-risc-nodejs). That one holds a private key and proves it with mutual TLS, an HTTP message signature, or a detached JWS. Configuration names match where the two overlap.
+
+Documentation: <https://rcbj.github.io/gnap-caep-js/>. The license is the MIT License in `LICENSE`. The Business Source License used by iya-sts does not apply here.
+
+Node.js 24.22.1 or later. That is the engines field and the only version in the test matrix. It is the release that fixes HTTP2Shell (CVE-2026-111497).
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| `packages/gnap-caep-client` | The library published to npm as `gnap-caep-client`. Source is `src/*.js` (`gnap-client.js`, `keys.js`, `httpsig.js`, `grant-set.js`, `accounts.js`, `caep/`). Tests are `test/`. The package is published from the source. `npm run build:types` writes declarations that are not committed. |
+| `demo` | The static demo. `demo/server.js` serves `demo/public/` (`app.js`, `gnap.json`). |
+| `scripts` | `configure-iya-sts.mjs` registers the finish URI on iya-sts. `version.mjs` stamps the published version. |
+| `docs` | The GitHub Pages site. |
+| `tools/apidocs` | TypeDoc and JSDoc. It is outside the npm workspace. |
+| `Dockerfile`, `docker-compose.yml` | The demo image. Compose publishes `PORT` to the same host port. |
+
+The root `package.json` is a private workspace named `gnap-caep-client-monorepo`. Committed manifests stay at `M.N.0` from the root `VERSION` file.
+
+## Usage
+
+```sh
+npm install gnap-caep-client
+```
+
+```js
+import { GNAPClient, IndexedDBKeyStore, TokenManager } from 'gnap-caep-client';
+
+const client = await GNAPClient.discover({
+  grantEndpoint: 'https://as.example.com/gnap',
+  finishUri: `${location.origin}/callback`,
+  access: ['ssf.read'],
+  classId: 'my-spa',
+  keyStore: new IndexedDBKeyStore(),
+});
+```
+
+The finish URI is `location.origin` plus `/callback`. The package README is the reference.
+
+## Tests
+
+```sh
+npm ci
+npm test
+npm run test:types
+npm run version:check
+```
+
+`npm test` runs `node:test` on `packages/gnap-caep-client/test/*.test.js` and `scripts/*.test.mjs`, against a strict in-memory grant server, resource server, and SSF transmitter. `test:types` builds the declarations and type-checks consumers, including the `ts` examples in the documentation. `version:check` fails unless every manifest is `M.N.0`.
+
+`.github/workflows/tests.yml` also builds the demo image and checks the page. That job publishes host port 3000. Do not run it while a demo is already bound there. The in-process commands above do not need the container.
+
+## Demo
+
+Compose maps `${PORT:-3000}:${PORT:-3000}`. The page's finish URI is `location.origin` plus `/callback`, so registration has to use that same origin. `scripts/configure-iya-sts.mjs` sets the finish URI and the display URI on the origin for `PORT`, unless an explicit public URL is set.
+
+```sh
+npm install
+ADMIN_API_CLIENT_SECRET=… npm run configure-iya-sts
+docker compose up --build
+```
+
+Open <http://localhost:3000> and sign in. The image health check requests `http://127.0.0.1:${PORT}/`.
+
+An explicit `PUBLIC_URL` replaces the origin and keeps the path. The default `http://localhost:3000` is not explicit. `pollIntervalMs` is a millisecond pause, not a port.
+
+## Releases
+
+`main` publishes `M.N.P` as npm `latest`. `develop` publishes `M.N.P-next.R` as `next`. The patch is chosen at publish time by `scripts/version.mjs` from the versions already on npm. After bumping `VERSION`, run `npm run version:sync`.
+
+`.github/workflows/npm-publish.yml` runs only when the push changes the package directory, `VERSION`, `package-lock.json`, `scripts/version.mjs`, or that workflow. A change that is only this file, the demo, or the docs does not publish. A pull request packs and publishes nothing.
+
+## Changes
+
+Branch from `develop`. Open a pull request into `develop` and merge it there. The default branch is `main`, so a closing keyword on that pull request does not close the issue. Close the issue in a comment that names the `develop` commit. Then merge `develop` into `main`, and fast-forward `develop` to that same commit so both branches name one hash.
