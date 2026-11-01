@@ -99,7 +99,7 @@ const client = await GNAPClient.discover({
 |---|---|
 | `grantEndpoint` | The AS's grant endpoint. `discover()` sends `OPTIONS` there and checks that the answer names this endpoint (the mix-up defence). Pass `metadata` instead to skip discovery. |
 | `finishUri` | Your callback page. It must use `https`, or `http` on a loopback address, and be registered at the AS. |
-| `access` | The rights to ask for, by default: reference strings (`"ssf.read"`) or RFC 9635 section 8 objects (`{ type, actions, locations }`). `createGrantRequest({ access })` overrides it per request. |
+| `access` | The rights to ask for, by default: reference strings (`"ssf.read"`) or RFC 9635 section 8 objects (`{ type, actions, locations }`). `createGrantRequest({ access })` overrides it per request. With `signals: false`, `ssf.read` and `ssf.manage` are removed from that list. |
 | `classId` | The registered application's identifier, sent as `client.class_id`. Needed whenever the AS does not know the browser's key, which is the usual case. |
 
 ### Who the person is: `subject` and `idToken`
@@ -183,6 +183,22 @@ Which store to choose:
 | `MemoryTokenStore` | nothing | no | Smallest exposure; sign in after every reload. |
 | `WebStorageTokenStore` (sessionStorage) | reloads, the trip to the AS | no | One sign-in per tab. |
 | `IndexedDBTokenStore` | closing the browser | yes | Any tab can switch to any cached account. Pair it with `IndexedDBKeyStore`. |
+
+## Turning CAEP and RISC off: `signals`
+
+`signals` defaults to on (omit it, or set `true`). `"signals": false` turns CAEP and RISC off. The grant request then drops `ssf.read` and `ssf.manage`: a string right is removed after trimming, and an object is removed when its `type` is exactly one of those two. Every other right stays. The subject portion of the grant request is unchanged, and sign-in does not read `/.well-known/ssf-configuration`.
+
+Do not start an `SSFReceiver`. The demo page does not construct one, and it does not contact a transmitter. If `ssf.read` and `ssf.manage` were the only rights, set `access` to a right the authorization server grants. The library does not invent a replacement.
+
+```js
+const client = await GNAPClient.discover({
+  grantEndpoint: 'https://as.example.com/gnap',
+  finishUri: `${location.origin}/callback`,
+  signals: false,
+  access: ['photo-api'],
+  keyStore: new IndexedDBKeyStore(),
+});
+```
 
 ## CAEP: `SSFReceiver`
 
