@@ -16,7 +16,7 @@ Node.js 24.22.1 or later. That is the engines field and the only version in the 
 | `demo` | The static demo. `demo/server.js` serves `demo/public/` (`app.js`, `gnap.json`). |
 | `scripts` | `configure-iya-sts.mjs` registers the finish URI on iya-sts. `version.mjs` stamps the published version. |
 | `docs` | The GitHub Pages site. |
-| `tools/apidocs` | TypeDoc and JSDoc. It is outside the npm workspace. |
+| `tools/apidocs` | TypeDoc and JSDoc. It is outside the npm workspace. It overrides minimatch to 11 (GHSA-g3hv-75wg-m249), and `minimatch-compat.mjs`, loaded before TypeDoc, restores the `matchOne()` TypeDoc 0.28.20 still calls; remove both when TypeDoc moves to minimatch 11. |
 | `Dockerfile`, `docker-compose.yml` | The demo image. Compose publishes `PORT` to the same host port. |
 
 The root `package.json` is a private workspace named `gnap-caep-client-monorepo`. Committed manifests stay at `M.N.0` from the root `VERSION` file.
