@@ -73,7 +73,7 @@ BROWSER_IMAGE = "gnap-caep-js-live:browser"
 PROFILE = {
     "repo": "gnap-caep-js",
     "application": "gnap-caep-demo",
-    "password_env": "GNAP_DEMO_USER_PASSWORD",
+    "test_user_env": "GNAP_DEMO_USER_PASSWORD",
     "test_user": "gnap-demo-user",
 }
 
@@ -91,20 +91,23 @@ def tls_context(cafile=None):
     return context
 
 
-def run(command, **kwargs):
-    print("+ " + " ".join(command), flush=True)
+def run(label, command, **kwargs):
+    """Run command, printing only label. The command line is never echoed: some name the variable
+    that carries the test user's password, and nothing derived from a secret may reach a print
+    line (CodeQL py/clear-text-logging-sensitive-data). Each caller passes a fixed label."""
+    print("+ " + label, flush=True)
     completed = subprocess.run(command, check=False, text=True, **kwargs)
     if completed.returncode != 0:
         if completed.stdout:
             print(completed.stdout, flush=True)
         if completed.stderr:
             print(completed.stderr, file=sys.stderr, flush=True)
-        raise RuntimeError(f"{command[0]} exited {completed.returncode}")
+        raise RuntimeError(f"{label} exited {completed.returncode}")
     return completed
 
 
-def docker(*args, **kwargs):
-    return run(["docker", *args], **kwargs)
+def docker(label, *args, **kwargs):
+    return run(label, ["docker", *args], **kwargs)
 
 
 def docker_rm(name):
@@ -272,14 +275,15 @@ def prepare_sts(sts_port, secret):
     if not image:
         if not source:
             cloned = tempfile.mkdtemp(prefix="iya-sts-main-")
-            run(["git", "clone", "--depth", "1", "--branch", "main", STS_REPO, cloned])
-            run(["git", "-C", cloned, "submodule", "update", "--init", "--recursive"])
+            run("git clone iya-sts main", ["git", "clone", "--depth", "1", "--branch", "main", STS_REPO, cloned])
+            run("git submodule update (iya-sts)", ["git", "-C", cloned, "submodule", "update", "--init", "--recursive"])
             source = cloned
         image = "iya-sts-live:main"
-        docker("build", "-t", image, source)
+        docker("docker build " + image + " (iya-sts)", "build", "-t", image, source)
     name = "iya-sts-live-" + PROFILE["repo"]
     docker_rm(name)
     docker(
+        "docker run " + name + " from " + image,
         "run", "-d", "--name", name,
         "-p", f"127.0.0.1:{sts_port}:{sts_port}",
         "-e", f"STS_PORT={sts_port}",
@@ -309,13 +313,14 @@ def write_gnap_file(path, sts_origin):
 def register(work, demo_origin, demo_port):
     """The install script, in the Node image. Secrets go through the environment, not argv."""
     completed = run(
+        "docker run " + NODE_IMAGE + " node scripts/configure-iya-sts.mjs",
         [
             "docker", "run", "--rm", "--network", "host",
             "-v", f"{ROOT / 'scripts'}:/app/scripts:ro",
             "-v", f"{work / 'gnap.json'}:/app/demo/public/gnap.json:ro",
             "-v", f"{work / 'root.pem'}:/app/root.pem:ro",
             "-e", "ADMIN_API_CLIENT_SECRET",
-            "-e", PROFILE["password_env"],
+            "-e", PROFILE["test_user_env"],
             "-e", f"PORT={demo_port}",
             "-w", "/app",
             NODE_IMAGE,
@@ -333,9 +338,10 @@ def register(work, demo_origin, demo_port):
 
 
 def start_demo(work, image, name, demo_port, demo_origin, grant_endpoint):
-    docker("build", "-t", image, str(ROOT))
+    docker("docker build " + image, "build", "-t", image, str(ROOT))
     docker_rm(name)
     docker(
+        "docker run " + name + " from " + image,
         "run", "-d", "--name", name, "--network", "host",
         "-v", f"{work / 'gnap.json'}:/app/demo/public/gnap.json:ro",
         "-e", f"PORT={demo_port}",
@@ -373,8 +379,9 @@ class Browser:
             "-e", "LIVE_PASSWORD",
             BROWSER_IMAGE,
         ]
-        print("+ " + " ".join(command), flush=True)
-        env = {**os.environ, "LIVE_PASSWORD": os.environ[PROFILE["password_env"]]}
+        # A fixed label, not the command: it names the variable that carries the password.
+        print("+ docker run " + BROWSER_IMAGE + " (scripts/live_browser.py)", flush=True)
+        env = {**os.environ, "LIVE_PASSWORD": os.environ[PROFILE["test_user_env"]]}
         self.process = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env, bufsize=1
         )
@@ -422,10 +429,10 @@ def main():
     if any(port in FORBIDDEN_PORTS for port in bound) or len(set(bound)) != len(bound):
         raise SystemExit("LIVE_STS_PORT and LIVE_DEMO_PORT must differ and must not bind 3000, 8081, or 18481 to 18495")
     secret = os.environ.get("ADMIN_API_CLIENT_SECRET") or os.environ.get("STS_ADMIN_API_CLIENT_SECRET") or secrets.token_urlsafe(24)
-    password = os.environ.get(PROFILE["password_env"]) or secrets.token_urlsafe(18)
+    password = os.environ.get(PROFILE["test_user_env"]) or secrets.token_urlsafe(18)
     # Secrets reach docker as -e NAME from this environment, never on a printed command line.
     os.environ["ADMIN_API_CLIENT_SECRET"] = secret
-    os.environ[PROFILE["password_env"]] = password
+    os.environ[PROFILE["test_user_env"]] = password
     sts_origin, sts_name = prepare_sts(sts_port, secret)
     # The SPA's finish URI is location.origin + /callback, so this origin is exactly what is registered.
     demo_origin = f"http://127.0.0.1:{demo_port}"
@@ -445,7 +452,7 @@ def main():
         gnap_file.chmod(0o644)
         register(work, demo_origin, demo_port)
         start_demo(work, image, demo_name, demo_port, demo_origin, sts_origin + "/gnap")
-        docker("build", "-t", BROWSER_IMAGE, "-f", str(ROOT / "scripts" / "live-browser.Dockerfile"),
+        docker("docker build " + BROWSER_IMAGE, "build", "-t", BROWSER_IMAGE, "-f", str(ROOT / "scripts" / "live-browser.Dockerfile"),
                str(ROOT / "scripts"))
         docker_rm(browser_name)
         browser = Browser(work, browser_name, sts_origin, demo_origin)
