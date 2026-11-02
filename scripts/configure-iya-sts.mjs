@@ -42,12 +42,20 @@
  * seeded client `sts-api-client`, `client_credentials` with HTTP Basic, audienced to
  * `<base>/admin-api`, scope `admin:read admin:write`. The secret is STS_ADMIN_API_CLIENT_SECRET or
  * ADMIN_API_CLIENT_SECRET; on the compose stack it lives in OpenBao (iya-sts docs/management-api.md).
+ *
+ * TLS: every call is verified. With --ca (or IYA_STS_CA), against that PEM file. Without one, the
+ * script first learns the anchor on first use: it reads the chain iya-sts publishes at
+ * GET /tls/server-certificate, with no credential and unverified, requires the leaf to name the host
+ * and every certificate to be signed by the next, takes the self-signed root, prints its SHA-256 to
+ * compare with iya-sts's PKI page, and verifies every management call against it.
  */
 
 import { execFileSync } from 'node:child_process';
+import { X509Certificate } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import https from 'node:https';
 import { dirname, resolve } from 'node:path';
+import { checkServerIdentity } from 'node:tls';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +72,7 @@ export function usage() {
   return `Usage: node scripts/configure-iya-sts.mjs [--config path] [--public-url url]
                                          [--identifier id]
                                          [--test-user name | --no-test-user] [--dry-run]
+                                         [--ca file]
 
   --config       The demo's GNAP file, with grantEndpoint and access (default: demo/public/gnap.json)
   --public-url   Where the demo is served. The finish URI is <public-url>/callback
@@ -76,6 +85,8 @@ export function usage() {
                  demo/generated/<user>.password (mode 0600). It is never printed.
   --no-test-user Do not create a test user.
   --dry-run      Print the management API calls, and send nothing.
+  --ca           PEM file to verify iya-sts against (default: $IYA_STS_CA). Without one,
+                 the root of the chain iya-sts publishes is taken on first use and its SHA-256 printed.
 
 The management API secret is STS_ADMIN_API_CLIENT_SECRET or ADMIN_API_CLIENT_SECRET.`;
 }
@@ -90,6 +101,7 @@ export function parseArgs(argv, env = process.env) {
     identifier: undefined,
     dryRun: false,
     help: false,
+    ca: env.IYA_STS_CA ? resolve(env.IYA_STS_CA) : '',
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -108,6 +120,11 @@ export function parseArgs(argv, env = process.env) {
     else if (arg === '--test-user') out.testUser = String(value()).trim();
     else if (arg === '--no-test-user') out.testUser = '';
     else if (arg === '--dry-run') out.dryRun = true;
+    else if (arg === '--ca') {
+      const file = String(value());
+      if (!file) throw new Error('--ca needs a file');
+      out.ca = resolve(file);
+    }
     else throw new Error(`Unknown argument ${arg}\n${usage()}`);
   }
   if (out.publicUrlGiven && !out.publicUrl) throw new Error('--public-url is empty');
@@ -223,16 +240,78 @@ export function savePassword(username, password, dir = GENERATED_DIR) {
 /** Single-valued attributes are SET on an existing entry; the others are ADDED to. */
 export const SINGLE_VALUED = new Set(['gnapDisplayUri', 'gnapInstanceId']);
 
-function request(url, { method = 'GET', headers = {}, body } = {}) {
+const BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
+/**
+ * What a first use can still check without an anchor: the published chain starts with a leaf that
+ * names the host, every certificate is signed by the next one up, and the top one is a self-signed
+ * root, which is returned.
+ */
+export function rootOnFirstUse(hostname, certs) {
+  if (!certs.length) throw new Error('the published trust chain holds no certificate');
+  const mismatch = checkServerIdentity(hostname, certs[0].toLegacyObject());
+  if (mismatch) throw mismatch;
+  for (let i = 0; i + 1 < certs.length; i += 1) {
+    if (!certs[i].checkIssued(certs[i + 1]) || !certs[i].verify(certs[i + 1].publicKey)) {
+      throw new Error(`certificate ${i + 1} of the published chain is not signed by certificate ${i + 2}`);
+    }
+  }
+  const top = certs[certs.length - 1];
+  if (top.subject !== top.issuer || !top.verify(top.publicKey)) {
+    throw new Error('the published chain does not end in a self-signed root; pass --ca with the iya-sts Root CA');
+  }
+  return top;
+}
+
+/** The PEM every management call is verified against: --ca's file, or the root taken on first use. */
+export async function trustAnchor(base, caFile) {
+  if (caFile) {
+    const pem = readFileSync(caFile, 'utf8');
+    if (!(pem.match(BLOCK) ?? []).length) throw new Error(`${caFile} holds no PEM certificate`);
+    return { pem, firstUse: false };
+  }
+  const published = new URL('/tls/server-certificate', base).href;
+  const reply = await firstUseRequest(published);
+  if (reply.status !== 200) throw new Error(`${published} answered ${reply.status}; pass --ca with the iya-sts Root CA`);
+  const certs = (reply.text.match(BLOCK) ?? []).map((block) => new X509Certificate(block));
+  const root = rootOnFirstUse(new URL(base).hostname, certs);
+  return { pem: `${root.toString().trim()}\n`, firstUse: true, root };
+}
+
+let trustedCa = '';
+
+function firstUseRequest(url, { method = 'GET', headers = {}, body } = {}) {
   return new Promise((resolvePromise, reject) => {
     const u = new URL(url);
     const payload = body === undefined ? null : Buffer.from(body);
     const req = https.request({
       hostname: u.hostname, port: u.port, path: `${u.pathname}${u.search}`, method,
       headers: payload ? { ...headers, 'content-length': payload.length } : headers,
-      // The listener certificate is this stack's own; the iya-sts test tool does the same
-      // (tests/tools/admin-api-token.js sets rejectUnauthorized: false).
+      // Unverified: only the first-use GET of /tls/server-certificate, which carries no
+      // credential, comes here. Every management call is verifiedRequest().
       rejectUnauthorized: false,
+    }, (res) => {
+      let text = '';
+      res.on('data', (chunk) => { text += chunk; });
+      res.on('end', () => resolvePromise({ status: res.statusCode, text }));
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+function verifiedRequest(url, { method = 'GET', headers = {}, body } = {}) {
+  return new Promise((resolvePromise, reject) => {
+    const u = new URL(url);
+    const payload = body === undefined ? null : Buffer.from(body);
+    const req = https.request({
+      hostname: u.hostname, port: u.port, path: `${u.pathname}${u.search}`, method,
+      headers: payload ? { ...headers, 'content-length': payload.length } : headers,
+      // Verified against trustAnchor()'s PEM, host name included.
+      ca: trustedCa,
+      minVersion: 'TLSv1.2',
+      agent: false,
     }, (res) => {
       let text = '';
       res.on('data', (chunk) => { text += chunk; });
@@ -247,7 +326,7 @@ function request(url, { method = 'GET', headers = {}, body } = {}) {
 async function mintAdminToken(origin, secret) {
   const audience = `${origin}/admin-api`;
   const form = `grant_type=client_credentials&scope=${encodeURIComponent('admin:read admin:write')}&resource=${encodeURIComponent(audience)}`;
-  const reply = await request(`${origin}/oauth2/token`, {
+  const reply = await verifiedRequest(`${origin}/oauth2/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Basic ${Buffer.from(`sts-api-client:${secret}`).toString('base64')}` },
     body: form,
@@ -259,7 +338,7 @@ async function mintAdminToken(origin, secret) {
 }
 
 async function admin(realmBase, token, method, path, body) {
-  const reply = await request(`${realmBase}/admin-api${path}`, {
+  const reply = await verifiedRequest(`${realmBase}/admin-api${path}`, {
     method,
     headers: { accept: 'application/json', authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -354,6 +433,15 @@ export async function main(argv = process.argv.slice(2)) {
   if (!secret) throw new Error('neither STS_ADMIN_API_CLIENT_SECRET nor ADMIN_API_CLIENT_SECRET is set, so no /admin-api token can be minted.');
   if (file.realmBase !== file.origin) {
     console.warn(`The grant endpoint is in a trust realm (${file.realmBase}); the management token is minted in the default realm.`);
+  }
+  const anchor = await trustAnchor(file.origin, args.ca);
+  trustedCa = anchor.pem;
+  if (anchor.firstUse) {
+    console.log(`TLS: trusting ${file.origin}'s root on first use: ${anchor.root.subject.replace(/\n/g, ', ')}`);
+    console.log(`  sha256 ${anchor.root.fingerprint256}`);
+    console.log('  Compare it with the Root CA on iya-sts\'s Server configuration, PKI page, or pass --ca.');
+  } else {
+    console.log(`TLS: verifying ${file.origin} against ${args.ca}`);
   }
   const token = await mintAdminToken(file.origin, secret);
   for (const call of plan.calls) {
