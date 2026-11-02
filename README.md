@@ -42,6 +42,14 @@ npm test
 npm run test:types
 ```
 
+### Live test against iya-sts
+
+```sh
+python3 scripts/live_iya_sts.py
+```
+
+It starts a fresh iya-sts from its `main` branch (memory mode, no persistence or clustering), registers the demo's GNAP application, and signs in through the demo in headless Chromium (Playwright's official container image): the SPA starts a grant, iya-sts shows its sign-in screen and its GNAP approval page, every right is approved, and the browser comes back to the SPA's finish URI. It then emits a CAEP `credential-change` and a `session-revoked`, and requires the page to show the first while still signed in and to be signed out after the second. It needs only Docker and the host's Python 3; Node and the browser run in containers. `IYA_STS_IMAGE` starts the fresh container from an image you already have, `IYA_STS_URL` uses a running iya-sts, and `LIVE_STS_PORT` / `LIVE_DEMO_PORT` (default 18505 and 18605) choose the ports. The `Nightly` workflow runs the unit suite and this test every day at 06:19 UTC.
+
 Branch from `develop`. See [Development and releases](docs/development.md).
 
 ## License

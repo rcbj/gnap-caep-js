@@ -54,6 +54,22 @@ npm run version:check
 
 `.github/workflows/tests.yml` also builds the demo image and checks the page. That job publishes host port 3000. Do not run it while a demo is already bound there. The in-process commands above do not need the container.
 
+## Live test and the nightly suite
+
+`scripts/live_iya_sts.py` is host Python, standard library only. It starts a fresh iya-sts (`IYA_STS_IMAGE`, or a clone of `main` built here, or a running one at `IYA_STS_URL` that it never stops) on `127.0.0.1:${LIVE_STS_PORT:-18505}` with `STS_PERSISTENCE_MODE=memory`, `STS_CLUSTER_MODE=off` and no workers. It runs `scripts/configure-iya-sts.mjs` in `node:24.22.1-alpine` against a `gnap.json` pointing at that iya-sts, with `--public-url http://127.0.0.1:${LIVE_DEMO_PORT:-18605}` (the page's finish URI is `location.origin` plus `/callback`, so that origin is exactly what is registered) and the test user `gnap-demo-user`. It serves the demo image with that `gnap.json` mounted over `demo/public/gnap.json`, on the host network.
+
+`scripts/live_browser.py` runs only in `gnap-caep-js-live:browser`, built by `scripts/live-browser.Dockerfile` from `mcr.microsoft.com/playwright/python:v1.55.0-noble` (that image has the browsers but not the `playwright` package or `certutil`), and drives headless Chromium: Sign in on the page, which starts a GNAP grant with the browser's key; iya-sts's `/gnap/interact` sends it to the `/authn` username and password screen (an optional step's skip is pressed), then to `/gnap/approve/{id}`, where every right and the subject information are ticked and Allow is pressed; iya-sts redirects to the finish URI. It keeps the page open and answers `status` on stdin with the page's `#live-status` JSON. The host script emits `credential-change` and `session-revoked` through `POST /admin-api/caep/emit` and requires the first while `signedIn` is true and the second with `signedIn` false. The page receives both by polling the application's SSF stream from the browser with its GNAP token.
+
+`#live-status` is a hidden element `app.js` redraws with every log render: `signedIn`, the subject of the account the tab has (or last had) active, the receiver state (`connected` while polling) and its last poll error, and each received event's `type` URI and `jti`. Never a token, a grant or a payload.
+
+The demo's signal handlers start `accounts.end()` on a timer instead of awaiting it. Ending an account stops its stream, and `SSFReceiver.stop()` waits for the poll in flight, which is the one running the handler: awaited, the end would wait for itself, the SET would never be logged or acknowledged, polling would stop, and the account would stay signed in. oidc-caep-client's live test found it; the same shape is here.
+
+TLS: the host script takes the one self-signed certificate from the chain `GET /tls/server-certificate` serves (`CN = sts Root CA`), verifies iya-sts against it, and mounts it into the browser container, which adds it to Chromium's NSS database (`certutil`, trust `C,,`). The browser is never told to ignore certificate errors. Every `ssl.SSLContext` the script makes sets TLS 1.2 as the minimum. Secrets (the management API secret, the test user's password) reach containers as `-e NAME`, never on a command line, and nothing derived from them is printed. Container names: `iya-sts-live-gnap-caep-js`, `gnap-caep-js-live-demo`, `gnap-caep-js-live-browser`; images `gnap-caep-js-live:demo` and `gnap-caep-js-live:browser`. Never bind 3000, 8081 or 18481 to 18495.
+
+`.github/workflows/nightly.yml` runs at 06:19 UTC (`19 6 * * *`) and on demand: the unit suite in the Node image, then the live test. `tests.yml` has no schedule.
+
+`scripts/configure-iya-sts.mjs` never prints a generated test-user password: it writes it to `demo/generated/<user>.password` (mode 0600) and prints the path. `demo/generated/` is in `.gitignore` and `.dockerignore`.
+
 ## Demo
 
 Compose maps `${PORT:-3000}:${PORT:-3000}`. The page's finish URI is `location.origin` plus `/callback`, so registration has to use that same origin. `scripts/configure-iya-sts.mjs` sets the finish URI and the display URI on the origin for `PORT`, unless an explicit public URL is set.

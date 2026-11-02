@@ -43,7 +43,7 @@ ADMIN_API_CLIENT_SECRET=… npm run configure-iya-sts
 
 - creates the application `gnap-caep-demo`, kind `gnap-client`, protocol GNAP, with no key, `gnapFinishUri` (`<public-url>/callback`, the only address the interaction is sent to), `gnapInteractionStartModes` (`redirect`), `appCorsOrigin` (the demo's origin), `gnapInstanceId` (the identifier: the `client_id` in the access tokens, which iya-sts's CORS check resolves the application by), `gnapDisplayUri`, and `oauthAllowedScope` (`ssf.read ssf.manage`, the protected rights the grant asks for);
 - adds the application to `SSF_READ` and `SSF_MANAGE` when `access` names those rights. `"signals": false` skips both;
-- creates a test user, `gnap-demo-user`. Its password is `GNAP_DEMO_USER_PASSWORD`, or one is generated and printed once.
+- creates a test user, `gnap-demo-user`. Its password is `GNAP_DEMO_USER_PASSWORD`, or one is generated and written to `demo/generated/gnap-demo-user.password` (mode 0600); the script prints only that path, never the password.
 
 | Option | Use |
 |---|---|

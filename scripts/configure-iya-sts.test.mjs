@@ -1,15 +1,36 @@
 // Tests for scripts/configure-iya-sts.mjs: what it would ask iya-sts to write, worked out offline.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { demoPort, parseArgs, planFor, publicUrlFor, readGnapFile } from './configure-iya-sts.mjs';
+import { demoPort, parseArgs, planFor, publicUrlFor, readGnapFile, savePassword } from './configure-iya-sts.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./configure-iya-sts.mjs', import.meta.url));
 const DEMO_FILE = fileURLToPath(new URL('../demo/public/gnap.json', import.meta.url));
 
 describe('configure-iya-sts', () => {
+  it('writes a generated password to <user>.password, mode 0600, and never prints it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gnap-password-'));
+    try {
+      const path = savePassword('gnap-demo-user', 's3cret-value', join(dir, 'generated'));
+      assert.equal(path, join(dir, 'generated', 'gnap-demo-user.password'));
+      assert.equal(readFileSync(path, 'utf8'), 's3cret-value\n');
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+      // An existing, wider file is narrowed.
+      writeFileSync(path, 'old', { mode: 0o644 });
+      savePassword('gnap-demo-user', 'again', join(dir, 'generated'));
+      assert.equal(statSync(path).mode & 0o777, 0o600);
+      assert.throws(() => savePassword('../x', 'p', dir), /cannot name a file/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const source = readFileSync(SCRIPT, 'utf8');
+    assert.doesNotMatch(source, /console\.\w+\([^)]*created\.body\.password\s*\}/);
+  });
+
   it('reads the demo\'s file: the default realm, and the Shared Signals scopes its access names', () => {
     const file = readGnapFile(readFileSync(DEMO_FILE, 'utf8'));
     assert.equal(file.realmBase, 'https://localhost:8081');
