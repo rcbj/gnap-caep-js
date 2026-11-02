@@ -293,7 +293,7 @@ describe('the finish redirect and the continuation', () => {
       (e) => e instanceof GNAPError && e.error === 'user_denied' && e.context.from === '/orders');
   });
 
-  it('waits and retries once when the continuation is too_fast', async () => {
+  it('waits and retries once when the continuation is too_fast, with the continue object the error carries', async () => {
     const client = await newClient();
     const { url } = await client.createGrantRequest();
     as.state.tooFastOnce = true;

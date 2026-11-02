@@ -275,7 +275,9 @@ export async function createStubAS(opts = {}) {
       }
       if (state.tooFastOnce) {
         state.tooFastOnce = false;
-        return gnapError('too_fast', 400, { continue: { uri: `${issuer}/gnap/continue/${grant.id}`, access_token: { value: grant.continueToken }, wait: 1 } });
+        // Section 3.6: the error's continue object is the one to use, with a NEW token, as iya-sts answers;
+        // the token just presented is spent.
+        return gnapError('too_fast', 400, { continue: { ...continueObject(grant), wait: 1 } });
       }
       if (grant.status === 'pending') {
         if (!data.interact_ref || data.interact_ref !== grant.interactRef) return gnapError('invalid_interaction');
