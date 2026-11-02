@@ -3,8 +3,19 @@ import { ValidationError } from './errors.js';
 
 const cache = new Map();
 
+/**
+ * `s` without its trailing slashes. A loop, not `replace(/\/+$/, '')`: that regex is retried at every
+ * slash of a run that is not at the end, so a long run followed by any other character is quadratic.
+ * @param {string} s
+ */
+function trimTrailingSlashes(s) {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 0x2f) end--;
+  return s.slice(0, end);
+}
+
 /** Trailing slashes off, so `https://as/gnap` and `https://as/gnap/` compare equal. */
-const norm = (u) => String(u ?? '').replace(/\/+$/, '');
+const norm = (u) => trimTrailingSlashes(String(u ?? ''));
 
 /**
  * Builds the OpenID Connect Discovery 1.0 §4 URL: the well-known suffix is appended to the issuer.
@@ -23,7 +34,7 @@ export function oidcDiscoveryUrl(issuer) {
  */
 export function wellKnownUrls(issuer, suffix) {
   const u = new URL(issuer);
-  const path = u.pathname.replace(/\/+$/, '');
+  const path = trimTrailingSlashes(u.pathname);
   const inserted = `${u.origin}/.well-known/${suffix}${path}`;
   const appended = `${u.origin}${path}/.well-known/${suffix}`;
   return inserted === appended ? [inserted] : [inserted, appended];
