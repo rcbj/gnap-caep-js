@@ -778,6 +778,25 @@ describe('SSF / CAEP receiver with a GNAP access token', () => {
     await r.stop();
   });
 
+  it('a handler may await stop() on its own receiver: no deadlock, its SET acknowledged, then the stream deleted', async () => {
+    const r = await receiver({ pollIntervalMs: 60_000 });
+    r.onError(() => {});
+    let stopped = false;
+    r.onSessionRevoked(async () => {
+      await r.stop({ deleteStream: true });
+      stopped = true;
+    });
+    await r.start();
+    await settle();
+    const s = stream(r);
+    s.queue.set('j1', await as.makeSet(s, CAEP.SESSION_REVOKED, {}, alice()));
+    const polled = r.poll();
+    await waitFor(() => stopped, 'stop() to resolve inside the handler');
+    await polled;
+    await waitFor(() => s.queue.size === 0, 'the acknowledgement sent once the poll ended');
+    await waitFor(() => !as.state.streams.has(s.stream_id), 'the stream deleted after the acknowledgement');
+  });
+
   it('never sends the token to a poll endpoint off the transmitter', async () => {
     const r = await receiver({ pollIntervalMs: 60_000 });
     await r.start();
