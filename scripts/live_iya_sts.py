@@ -313,6 +313,7 @@ def register(work, demo_origin, demo_port):
             "docker", "run", "--rm", "--network", "host",
             "-v", f"{ROOT / 'scripts'}:/app/scripts:ro",
             "-v", f"{work / 'gnap.json'}:/app/demo/public/gnap.json:ro",
+            "-v", f"{work / 'root.pem'}:/app/root.pem:ro",
             "-e", "ADMIN_API_CLIENT_SECRET",
             "-e", PROFILE["password_env"],
             "-e", f"PORT={demo_port}",
@@ -322,6 +323,7 @@ def register(work, demo_origin, demo_port):
             "--config", "/app/demo/public/gnap.json",
             "--public-url", demo_origin,
             "--test-user", PROFILE["test_user"],
+            "--ca", "/app/root.pem",
         ],
         capture_output=True,
     )

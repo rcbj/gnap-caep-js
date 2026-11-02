@@ -68,7 +68,7 @@ TLS: the host script takes the one self-signed certificate from the chain `GET /
 
 `.github/workflows/nightly.yml` runs at 06:19 UTC (`19 6 * * *`) and on demand: the unit suite in the Node image, then the live test. `tests.yml` has no schedule.
 
-`scripts/configure-iya-sts.mjs` never prints a generated test-user password: it writes it to `demo/generated/<user>.password` (mode 0600) and prints the path. `demo/generated/` is in `.gitignore` and `.dockerignore`.
+`scripts/configure-iya-sts.mjs` never prints a generated test-user password: it writes it to `demo/generated/<user>.password` (mode 0600) and prints the path. `demo/generated/` is in `.gitignore` and `.dockerignore`. Every management call is verified, against `--ca` (the live driver passes the root it checked) or against the root taken on first use after the host-name and link checks.
 
 ## Demo
 
