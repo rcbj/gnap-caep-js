@@ -185,7 +185,7 @@ await caep.start({ catchUp: true });                    // discover, create or r
 
 `onEventReceived` runs once for every accepted event, before the typed handlers; the default, `logEventReceived`, prints the event's name and `jti` only. `onEvent(uri, fn)`, `onAnyEvent(fn)` and `onUnhandledEvent(fn)` handle anything else, RISC included.
 
-**SET validation:** a compact JWS with `typ` `secevent+jwt` and an asymmetric algorithm, verified against the transmitter's JWKS; `iss` the transmitter; `aud` the stream's (fails closed without one); `jti`, `iat` and exactly one event; `iat` not in the future; a stream event about this stream; a replayed `jti` dropped. **Acknowledgement:** only after the handlers ran without throwing, up to `maxDeliveryAttempts` (default 5); only a definitely invalid SET is reported as an error; polls never overlap; `stop()` sends the acknowledgements still owed; the poll endpoint must be on the transmitter's origin.
+**SET validation:** a compact JWS with `typ` `secevent+jwt` and an asymmetric algorithm, verified against the transmitter's JWKS; `iss` the transmitter; `aud` the stream's (fails closed without one); `jti`, `iat` and exactly one event; `iat` not in the future; a stream event about this stream; a replayed `jti` dropped. **Acknowledgement:** only after the handlers ran without throwing, up to `maxDeliveryAttempts` (default 5); only a definitely invalid SET is reported as an error; polls never overlap; `stop()` sends the acknowledgements still owed, and a handler may await it on its own receiver (it then returns at once, and the poll sends them when it ends); the poll endpoint must be on the transmitter's origin.
 
 ## API summary
 

@@ -401,23 +401,20 @@ function signOnSessionTargets(subject) {
 }
 
 function handlers(getTokenSet) {
-  // Ending an account stops its stream, and SSFReceiver.stop() waits for the poll in flight, which is the
-  // one running this handler. Awaiting the end here would wait for itself: the event would never be logged
-  // or acknowledged, polling would stop, and the account would stay signed in. So the end starts once the
-  // handler has returned.
-  const end = (a, reason) => {
-    setTimeout(() => {
-      accounts.end(a.key, reason).catch((err) => {
-        ui.error = `Could not end ${labelOf(a)}: ${describe(err)}`;
-        render();
-      });
-    }, 0);
+  // Ending an account stops its stream from inside this handler; SSFReceiver.stop() then returns at once
+  // and the poll sends this SET's acknowledgement when it ends. A failure to end is shown, not thrown: the
+  // event was handled, and throwing would have the transmitter send it again.
+  const end = async (a, reason) => {
+    await accounts.end(a.key, reason).catch((err) => {
+      ui.error = `Could not end ${labelOf(a)}: ${describe(err)}`;
+      render();
+    });
   };
   return {
     sessionRevoked: handle(async (evt, a) => {
       if (!a) return 'No account named.';
       const session = evt.subject?.session?.id ?? '';
-      end(a, evt.reasonUser?.en ?? (session.startsWith('gnap-grant:') ? 'The grant was revoked at the authorization server.' : 'The session was revoked.'));
+      await end(a, evt.reasonUser?.en ?? (session.startsWith('gnap-grant:') ? 'The grant was revoked at the authorization server.' : 'The session was revoked.'));
       return 'Grant ended; its cached token discarded.';
     }, { bySignOnSession: true }),
     tokenClaimsChange: handle(async (evt, a) => {
@@ -430,7 +427,7 @@ function handlers(getTokenSet) {
     credentialChange: handle(async (evt, a) => {
       const { credential_type: type = 'credential', change_type: change } = evt.payload;
       if (a && ['revoke', 'delete'].includes(change)) {
-        end(a, `The ${type} was ${change}d; sign in again.`);
+        await end(a, `The ${type} was ${change}d; sign in again.`);
         return `Credential ${change}d: grant ended.`;
       }
       return 'User notified; grant kept.';
@@ -441,7 +438,7 @@ function handlers(getTokenSet) {
     }),
     deviceComplianceChange: handle(async (evt, a) => {
       if (a && evt.payload.current_status === 'not-compliant') {
-        end(a, 'The device is no longer compliant with security policy.');
+        await end(a, 'The device is no longer compliant with security policy.');
         return 'Device not compliant: grant ended.';
       }
       return 'Device compliant: no action.';
@@ -449,7 +446,7 @@ function handlers(getTokenSet) {
     riskLevelChange: handle(async (evt, a) => {
       const { current_level: level, risk_reason: why } = evt.payload;
       if (a && level === 'HIGH') {
-        end(a, `High risk detected (${why ?? 'no reason given'}).`);
+        await end(a, `High risk detected (${why ?? 'no reason given'}).`);
         return 'Risk HIGH: grant ended.';
       }
       if (a) stateOf(a.key).stepUp = level === 'MEDIUM' ? `Risk raised to MEDIUM (${why ?? 'no reason given'}).` : undefined;

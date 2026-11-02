@@ -62,13 +62,13 @@ npm run version:check
 
 `#live-status` is a hidden element `app.js` redraws with every log render: `signedIn`, the subject of the account the tab has (or last had) active, the receiver state (`connected` while polling) and its last poll error, and each received event's `type` URI and `jti`. Never a token, a grant or a payload.
 
-The demo's signal handlers start `accounts.end()` on a timer instead of awaiting it. Ending an account stops its stream, and `SSFReceiver.stop()` waits for the poll in flight, which is the one running the handler: awaited, the end would wait for itself, the SET would never be logged or acknowledged, polling would stop, and the account would stay signed in. oidc-caep-client's live test found it; the same shape is here.
+The demo's signal handlers await `accounts.end()`. Ending an account stops its stream from inside the handler; until #18 `SSFReceiver.stop()` waited for the poll in flight, which was the one running the handler, so the demo had to start the end on a timer. Now `stop()` called while a polled SET's handlers run returns at once and leaves the acknowledgements (and `deleteStream`) to the end of the poll.
 
 TLS: the host script takes the one self-signed certificate from the chain `GET /tls/server-certificate` serves (`CN = sts Root CA`), verifies iya-sts against it, and mounts it into the browser container, which adds it to Chromium's NSS database (`certutil`, trust `C,,`). The browser is never told to ignore certificate errors. Every `ssl.SSLContext` the script makes sets TLS 1.2 as the minimum. Secrets (the management API secret, the test user's password) reach containers as `-e NAME`, never on a command line, and nothing derived from them is printed. Container names: `iya-sts-live-gnap-caep-js`, `gnap-caep-js-live-demo`, `gnap-caep-js-live-browser`; images `gnap-caep-js-live:demo` and `gnap-caep-js-live:browser`. Never bind 3000, 8081 or 18481 to 18495.
 
 `.github/workflows/nightly.yml` runs at 06:19 UTC (`19 6 * * *`) and on demand: the unit suite in the Node image, then the live test. `tests.yml` has no schedule.
 
-`scripts/configure-iya-sts.mjs` never prints a generated test-user password: it writes it to `demo/generated/<user>.password` (mode 0600) and prints the path. `demo/generated/` is in `.gitignore` and `.dockerignore`.
+`scripts/configure-iya-sts.mjs` never prints a generated test-user password: it writes it to `demo/generated/<user>.password` (mode 0600) and prints the path. `demo/generated/` is in `.gitignore` and `.dockerignore`. Every management call is verified, against `--ca` (the live driver passes the root it checked) or against the root taken on first use after the host-name and link checks.
 
 ## Demo
 

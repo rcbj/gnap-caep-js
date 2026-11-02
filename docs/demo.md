@@ -52,6 +52,9 @@ ADMIN_API_CLIENT_SECRET=… npm run configure-iya-sts
 | `--identifier id` | Another application identifier (set the same `application` in `gnap.json`, which the page sends as `class_id`). |
 | `--test-user name`, `--no-test-user` | Name the test user, or skip it. |
 | `--dry-run` | Print every management API call, and send nothing. |
+| `--ca file` | The PEM file (for example iya-sts's Root CA) to verify iya-sts against. `IYA_STS_CA` names it too. |
+
+Every call the script makes is verified. Without `--ca`, it takes the root of the chain iya-sts publishes at `GET /tls/server-certificate` on first use (that request carries no credential), after checking that the leaf names the host and that each certificate is signed by the next, and prints the root's SHA-256: compare it with the Root CA on iya-sts's **Server configuration → PKI** page.
 
 The secret is `ADMIN_API_CLIENT_SECRET` or `STS_ADMIN_API_CLIENT_SECRET`. Every step can be repeated safely.
 
