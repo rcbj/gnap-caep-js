@@ -163,7 +163,10 @@ describe('configure-iya-sts: TLS', () => {
 
   before(async () => {
     server = https.createServer({ key: readFileSync(join(work, 'leaf.key')), cert: `${pem('leaf')}${pem('sts-root')}` },
-      (_req, res) => res.end('ok'));
+      (req, res) => {
+        res.statusCode = req.url === '/tls/server-certificate' ? 200 : 404;
+        res.end(req.url === '/tls/server-certificate' ? `${pem('leaf')}${pem('sts-root')}` : '');
+      });
     await new Promise((done) => server.listen(0, '127.0.0.1', done));
     origin = `https://127.0.0.1:${server.address().port}`;
   });
@@ -177,6 +180,17 @@ describe('configure-iya-sts: TLS', () => {
     assert.equal(anchor.firstUse, true);
     assert.equal(anchor.root.fingerprint256, cert('sts-root').fingerprint256);
     assert.equal(new X509Certificate(anchor.pem).fingerprint256, cert('sts-root').fingerprint256);
+  });
+
+  it('without --ca, a server that does not publish its chain is refused', async () => {
+    const bare = https.createServer({ key: readFileSync(join(work, 'leaf.key')), cert: pem('leaf') },
+      (_req, res) => { res.statusCode = 404; res.end(); });
+    await new Promise((done) => bare.listen(0, '127.0.0.1', done));
+    try {
+      await assert.rejects(trustAnchor(`https://127.0.0.1:${bare.address().port}`, ''), /answered 404/);
+    } finally {
+      await new Promise((done) => bare.close(done));
+    }
   });
 
   it('with --ca, uses that file and fetches nothing', async () => {
