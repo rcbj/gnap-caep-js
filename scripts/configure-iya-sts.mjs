@@ -34,8 +34,9 @@
  * It also adds the application to the native roles SSF_READ and SSF_MANAGE (application members), for
  * whichever of those rights the file asks for. `"signals": false` skips both. It creates a test user
  * (default gnap-demo-user) to approve the
- * grant. Its password is GNAP_DEMO_USER_PASSWORD, or one is generated and printed once. An existing user
- * keeps its password. Running it again adds the same values to the existing application.
+ * grant. Its password is GNAP_DEMO_USER_PASSWORD, or one is generated and written to
+ * demo/generated/<user>.password (mode 0600); only that path is printed, never the password. An existing
+ * user keeps its password. Running it again adds the same values to the existing application.
  *
  * The management API token is minted the way iya-sts/tests/tools/admin-api-token.js mints one: the
  * seeded client `sts-api-client`, `client_credentials` with HTTP Basic, audienced to
@@ -44,13 +45,15 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import https from 'node:https';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
+/** Where a generated test-user password is written. */
+export const GENERATED_DIR = resolve(repoRoot, 'demo/generated');
 
 export const SSF_ROLES = [
   { scope: 'ssf.read', role: 'SSF_READ' },
@@ -69,7 +72,8 @@ export function usage() {
   --identifier   The application's identifier, which the demo sends as class_id
                  (default: the file's "application", else gnap-caep-demo)
   --test-user    The test user to create (default: gnap-demo-user). Its password is
-                 $GNAP_DEMO_USER_PASSWORD, or one is generated and printed once.
+                 $GNAP_DEMO_USER_PASSWORD, or one is generated and written to
+                 demo/generated/<user>.password (mode 0600). It is never printed.
   --no-test-user Do not create a test user.
   --dry-run      Print the management API calls, and send nothing.
 
@@ -202,6 +206,20 @@ export function planFor({ file, identifier, publicUrl, testUser }) {
   return { calls, fields, finishUri };
 }
 
+/**
+ * Writes a generated password to <dir>/<username>.password, readable by its owner only, and returns the
+ * path. The password itself is never printed (rcbj: a log line is not a place for a credential).
+ */
+export function savePassword(username, password, dir = GENERATED_DIR) {
+  if (!/^[A-Za-z0-9._-]+$/.test(username)) throw new Error(`cannot name a file after the user ${JSON.stringify(username)}`);
+  mkdirSync(dir, { recursive: true });
+  const path = resolve(dir, `${username}.password`);
+  writeFileSync(path, `${password}\n`, { mode: 0o600 });
+  // writeFileSync's mode applies only when it creates the file; an existing one is narrowed too.
+  chmodSync(path, 0o600);
+  return path;
+}
+
 /** Single-valued attributes are SET on an existing entry; the others are ADDED to. */
 export const SINGLE_VALUED = new Set(['gnapDisplayUri', 'gnapInstanceId']);
 
@@ -307,7 +325,7 @@ async function ensureTestUser(realmBase, token, username) {
   const created = await admin(realmBase, token, 'POST', '/users/create', body);
   if (!created.body.ok) throw new Error(`creating ${username} was refused: ${JSON.stringify(created.body).slice(0, 300)}`);
   console.log(`Created user ${username}.`);
-  if (created.body.password) console.log(`Generated password for ${username} (shown once): ${created.body.password}`);
+  if (created.body.password) console.log(`Generated password for ${username} written to ${savePassword(username, created.body.password)} (mode 0600).`);
   if (created.body.credentialError) console.warn(`WARNING: the password was not set: ${created.body.credentialError}`);
 }
 

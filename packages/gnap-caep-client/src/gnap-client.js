@@ -456,7 +456,7 @@ export class GNAPClient extends Emitter {
   }
 
   async #continue(cont, method, body) {
-    const checked = this.#checkContinue(cont);
+    let checked = this.#checkContinue(cont);
     let waited = 0;
     for (;;) {
       try {
@@ -467,6 +467,9 @@ export class GNAPClient extends Emitter {
         const wait = Math.max(1, Number(err.continue?.wait ?? checked.wait ?? 1));
         if (waited + wait > this.#config.maxWaitSec) throw err;
         waited += wait;
+        // The error's continue object replaces the one just used: an AS may rotate the continuation token
+        // with it (iya-sts does), and the old token is then refused as invalid_continuation.
+        if (err.continue?.access_token?.value) checked = this.#checkContinue(err.continue);
         await new Promise((resolve) => setTimeout(resolve, wait * 1000));
       }
     }
