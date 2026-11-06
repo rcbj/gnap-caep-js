@@ -62,4 +62,4 @@ or **Settings → Pages → Source: GitHub Actions**. The site is then published
 2. For the **first** publish, add the repository secret **`NPM_TOKEN`**: an npm granular access token with publish rights. A trusted publisher can only be configured for a package that already exists.
 3. After the first publish, configure **trusted publishing** on npmjs.com (the package's **Settings → Trusted publishing**): repository `rcbj/gnap-caep-js`, workflow `npm-publish.yml`, environment `npm`. Then delete `NPM_TOKEN`.
 
-A push to `main` then publishes a release under `latest`, and a push to `develop` a pre-release under `next`. A pull request builds, tests and packs, and publishes nothing.
+A push to `main` then publishes a release under `latest`. A push to `develop` publishes nothing, so every release tag is on `main`. A pre-release under `next` comes only from running the workflow by hand on `main`. A pull request builds, tests and packs, and publishes nothing.

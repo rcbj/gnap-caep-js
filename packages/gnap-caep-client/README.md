@@ -26,7 +26,7 @@ npm install gnap-caep-client
 }
 ```
 
-**Versions** are ordinary semver: `^0.1.0` takes every later 0.1 release and nothing from 0.2. **Release channels:** `latest` (the default) is built from `main`; `next` is built from `develop` as pre-releases such as `0.1.1-next.3` (`npm install gnap-caep-client@next`).
+**Versions** are ordinary semver: `^0.1.0` takes every later 0.1 release and nothing from 0.2. **Release channels:** `latest` (the default) is built from `main`; `next` holds pre-releases such as `0.1.1-next.3`, published by hand from `main` when one is needed (`npm install gnap-caep-client@next`).
 
 **TypeScript.** The package ships declarations generated from the source's JSDoc. Use `"module": "NodeNext"` (or a bundler's resolution) so TypeScript reads the package's `exports`. The exported types include `GNAPClientConfig`, `GrantSet`, `SSFReceiverConfig`, `SecurityEvent`, `SecurityEventHandler`, `SSFErrorContext`, `Account`, `AccountManagerOptions`, `TokenStore` and `KeyStore`.
 
