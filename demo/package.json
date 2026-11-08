@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "express": "^5.2.1",
-    "jose": "^6.2.12",
+    "jose": "^6.2.15",
     "gnap-caep-client": "0.1.0"
   },
   "license": "MIT",
